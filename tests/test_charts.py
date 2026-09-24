@@ -38,6 +38,14 @@ class TestCharts(unittest.TestCase):
         self.assertIsNotNone(fig)
         self.assertGreaterEqual(len(fig.data), 5)
 
+    def test_tradingview_chart_generation(self):
+        from modules.tv_chart import get_tv_chart_payload
+        res = get_tv_chart_payload(self.df_price, show_bb=True, show_m20=True, show_m50=True, show_m200=True)
+        self.assertIsNotNone(res)
+        self.assertIn("cd", res)
+        self.assertGreater(len(res["cd"]), 0)
+
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -37,6 +37,8 @@ from modules.charts import (
     create_valuation_bands_chart,
     create_dupont_chart
 )
+from modules.tv_chart import render_tradingview_chart
+
 
 st.set_page_config(
     page_title="VNI Stock Evaluator",
@@ -144,18 +146,37 @@ tab_tech, tab_val, tab_health, tab_screener = st.tabs([
 # TAB 1: TECHNICAL ANALYSIS & BOLLINGER BANDS
 # =========================================================
 with tab_tech:
-    st.subheader(f"📊 Technical Price Chart & Indicators - {selected_symbol}")
-    tech_fig = create_technical_chart(
-        df=price_df,
-        symbol=selected_symbol,
-        show_ma20=show_ma20,
-        show_ma50=show_ma50,
-        show_ma200=show_ma200,
-        show_bollinger=show_bb,
-        show_rsi=show_rsi,
-        show_macd=show_macd
+    st.subheader(f"📊 Technical Chart (TradingView / FireAnt Engine) - {selected_symbol}")
+    
+    chart_view = st.radio(
+        "Chart Engine View",
+        ["🔥 TradingView Interactive (Drag/Zoom/Pan)", "📊 Multi-Subplot View (RSI & MACD)"],
+        horizontal=True
     )
-    st.plotly_chart(tech_fig, use_container_width=True)
+    
+    if "TradingView" in chart_view:
+        render_tradingview_chart(
+            df=price_df,
+            symbol=selected_symbol,
+            show_bb=show_bb,
+            show_ma20=show_ma20,
+            show_ma50=show_ma50,
+            show_ma200=show_ma200,
+            height=580
+        )
+    else:
+        tech_fig = create_technical_chart(
+            df=price_df,
+            symbol=selected_symbol,
+            show_ma20=show_ma20,
+            show_ma50=show_ma50,
+            show_ma200=show_ma200,
+            show_bollinger=show_bb,
+            show_rsi=show_rsi,
+            show_macd=show_macd
+        )
+        st.plotly_chart(tech_fig, use_container_width=True)
+
     
     st.subheader("💡 Technical Signals Summary")
     if price_df is not None and not price_df.empty and len(price_df) >= 20:
