@@ -18,9 +18,11 @@ def create_technical_chart(
     show_bollinger: bool = True,
     show_rsi: bool = True,
     show_macd: bool = False,
+    show_pivots: bool = False,
+    pivots_data: dict = None,
     fair_value_ref: float = None
 ):
-    """Constructs technical chart with Candlesticks, Bollinger Bands, MAs, Volume, RSI, MACD."""
+    """Constructs technical chart with Candlesticks, Bollinger Bands, MAs, Volume, RSI, MACD, and Pivot Points."""
     if df is None or df.empty or len(df) < 5:
         fig = go.Figure()
         fig.add_annotation(text="Insufficient price data", showarrow=False, font=dict(size=16))
@@ -75,6 +77,28 @@ def create_technical_chart(
         fig.add_trace(go.Scatter(x=data['time'], y=data['MA50'], name='MA 50', line=dict(color='#3B82F6', width=1.8)), row=1, col=1)
     if show_ma200:
         fig.add_trace(go.Scatter(x=data['time'], y=data['MA200'], name='MA 200', line=dict(color='#A855F7', width=2.2)), row=1, col=1)
+
+    if show_pivots and pivots_data:
+        pivot_configs = [
+            ("R3", pivots_data.get("R3"), "#EF4444", "dot"),
+            ("R2", pivots_data.get("R2"), "#F87171", "dash"),
+            ("R1", pivots_data.get("R1"), "#FCA5A5", "dash"),
+            ("PP", pivots_data.get("PP"), "#EAB308", "solid"),
+            ("S1", pivots_data.get("S1"), "#86EFAC", "dash"),
+            ("S2", pivots_data.get("S2"), "#4ADE80", "dash"),
+            ("S3", pivots_data.get("S3"), "#22C55E", "dot"),
+        ]
+        for name, val, color, dash in pivot_configs:
+            if val is not None and isinstance(val, (int, float)) and val > 0:
+                fig.add_hline(
+                    y=val,
+                    line_dash=dash,
+                    line_color=color,
+                    line_width=2 if name == "PP" else 1.2,
+                    annotation_text=f"{name}: {val:,.0f}",
+                    annotation_position="top right",
+                    row=1, col=1
+                )
         
     if fair_value_ref and fair_value_ref > 0:
         fig.add_hline(y=fair_value_ref, line_dash="dash", line_color="#EAB308", annotation_text=f"Fair: {fair_value_ref:,.0f} VND", row=1, col=1)
@@ -176,3 +200,111 @@ def create_dupont_chart(dupont_data: list):
     fig.update_yaxes(title_text="Margin (%) / Turnover (x)", secondary_y=False, showgrid=True, gridcolor="#21262D")
     fig.update_yaxes(title_text="ROE (%)", secondary_y=True, showgrid=False)
     return fig
+
+
+def create_intraday_vwap_chart(df: pd.DataFrame, symbol: str, ref_price: float = None):
+    """
+    Renders intraday price line vs Volume-Weighted Average Price (VWAP) with volume bars.
+    """
+    if df is None or df.empty or 'time' not in df.columns or 'price' not in df.columns:
+        fig = go.Figure()
+        fig.add_annotation(text="Chưa có dữ liệu khớp lệnh trong phiên", showarrow=False, font=dict(size=14, color="#8B949E"))
+        fig.update_layout(template="plotly_dark", paper_bgcolor="#0E1117", plot_bgcolor="#161B22", height=380)
+        return fig
+
+    data = df.copy().sort_values('time').reset_index(drop=True)
+    if 'vwap' not in data.columns:
+        cum_val = (data['price'] * data['volume']).cumsum()
+        cum_vol = data['volume'].cumsum()
+        data['vwap'] = cum_val / cum_vol.replace(0, np.nan)
+
+    colors = []
+    for _, row in data.iterrows():
+        m_type = str(row.get('match_type', '')).upper()
+        if 'BUY' in m_type or 'B' == m_type:
+            colors.append('#00C087')
+        elif 'SELL' in m_type or 'S' == m_type:
+            colors.append('#FF3B30')
+        else:
+            colors.append('#EAB308')
+
+    fig = make_subplots(rows=2, cols=1, shared_xaxes=True, vertical_spacing=0.05, row_heights=[0.72, 0.28], subplot_titles=[f"⚡ {symbol} Diễn Biến Khớp Lệnh & Đường VWAP Intraday", "Khối Lượng Khớp Lệnh"])
+
+    if ref_price and ref_price > 0:
+        fig.add_hline(y=ref_price, line_dash="dash", line_color="#EAB308", line_width=1.2, annotation_text=f"TC: {ref_price:,.0f}", annotation_position="top left", row=1, col=1)
+
+    fig.add_trace(go.Scatter(x=data['time'], y=data['price'], name="Giá Khớp", mode='lines+markers', line=dict(color='#38BDF8', width=2), marker=dict(size=3, color=colors)), row=1, col=1)
+    fig.add_trace(go.Scatter(x=data['time'], y=data['vwap'], name="VWAP (Bình quân)", mode='lines', line=dict(color='#F59E0B', width=2, dash='dot')), row=1, col=1)
+
+    fig.add_trace(go.Bar(x=data['time'], y=data['volume'], name="Khối lượng", marker_color=colors, opacity=0.85), row=2, col=1)
+
+    fig.update_layout(
+        template="plotly_dark", paper_bgcolor="#0E1117", plot_bgcolor="#161B22",
+        height=420, margin=dict(l=30, r=30, t=40, b=30),
+        legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1)
+    )
+    fig.update_yaxes(title_text="Giá (VND)", row=1, col=1, showgrid=True, gridcolor="#21262D")
+    fig.update_yaxes(title_text="KL", row=2, col=1, showgrid=True, gridcolor="#21262D")
+    return fig
+
+
+def create_technical_gauge_chart(score: int, label: str, buy_cnt: int, neu_cnt: int, sell_cnt: int):
+    """
+    Renders TradingView-style Speedometer Gauge for technical indicator consensus.
+    """
+    gauge_color = "#22C55E" if score >= 60 else ("#EF4444" if score <= 40 else "#EAB308")
+    
+    fig = go.Figure(go.Indicator(
+        mode="gauge+number",
+        value=score,
+        domain={'x': [0, 1], 'y': [0, 1]},
+        title={'text': f"<b>{label}</b><br><span style='font-size:0.8em;color:#8B949E'>🟢 Mua: {buy_cnt} | 🟡 Trung lập: {neu_cnt} | 🔴 Bán: {sell_cnt}</span>", 'font': {'size': 16, 'color': '#FFFFFF'}},
+        gauge={
+            'axis': {'range': [0, 100], 'tickwidth': 1, 'tickcolor': "#484F58", 'tickvals': [0, 25, 50, 75, 100], 'ticktext': ['Bán Mạnh', 'Bán', 'Theo Dõi', 'Mua', 'Mua Mạnh']},
+            'bar': {'color': gauge_color, 'thickness': 0.3},
+            'bgcolor': "#161B22",
+            'borderwidth': 2,
+            'bordercolor': "#30363D",
+            'steps': [
+                {'range': [0, 30], 'color': 'rgba(239, 68, 68, 0.25)'},
+                {'range': [30, 45], 'color': 'rgba(239, 68, 68, 0.12)'},
+                {'range': [45, 55], 'color': 'rgba(234, 179, 8, 0.15)'},
+                {'range': [55, 70], 'color': 'rgba(34, 197, 94, 0.12)'},
+                {'range': [70, 100], 'color': 'rgba(34, 197, 94, 0.25)'}
+            ],
+            'threshold': {
+                'line': {'color': gauge_color, 'width': 4},
+                'thickness': 0.75,
+                'value': score
+            }
+        }
+    ))
+
+    fig.update_layout(
+        template="plotly_dark", paper_bgcolor="#0E1117", plot_bgcolor="#161B22",
+        height=260, margin=dict(l=20, r=20, t=50, b=10)
+    )
+    return fig
+
+
+def create_order_flow_donut_chart(buy_vol: float, sell_vol: float, neutral_vol: float = 0):
+    """
+    Renders Donut Chart for Active Buy vs Active Sell volume pressure.
+    """
+    labels = ['Mua Chủ Động', 'Bán Chủ Động', 'Khác / ATC']
+    values = [buy_vol, sell_vol, neutral_vol]
+    colors = ['#00C087', '#FF3B30', '#EAB308']
+
+    fig = go.Figure(data=[go.Pie(
+        labels=labels, values=values, hole=.55,
+        marker=dict(colors=colors, line=dict(color='#0E1117', width=2)),
+        textinfo='label+percent', textfont_size=12
+    )])
+
+    fig.update_layout(
+        title="Tỷ Trọng Khớp Mua / Bán Chủ Động",
+        template="plotly_dark", paper_bgcolor="#0E1117", plot_bgcolor="#161B22",
+        height=260, margin=dict(l=10, r=10, t=40, b=10), showlegend=False
+    )
+    return fig
+

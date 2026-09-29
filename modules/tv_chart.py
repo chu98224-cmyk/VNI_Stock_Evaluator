@@ -1,16 +1,26 @@
 """
 TradingView Lightweight Charts Component for Streamlit
 Provides 60fps pan/zoom/drag candlestick chart with dynamic hover legend & separate volume scale.
+Supports both Daily and Intraday minute data.
 """
 
 import json
 import pandas as pd
 import streamlit.components.v1 as components
+from modules.tv_html import TV_HTML_TEMPLATE
 
 
 def get_tv_chart_payload(df: pd.DataFrame, show_bb: bool, show_m20: bool, show_m50: bool, show_m200: bool):
     data = df.copy().sort_values('time').reset_index(drop=True)
-    data['time_str'] = pd.to_datetime(data['time']).dt.strftime('%Y-%m-%d')
+    data['time_dt'] = pd.to_datetime(data['time'])
+    
+    # Check if data is intraday
+    is_intraday = False
+    if len(data) > 1:
+        diffs = data['time_dt'].diff().dropna()
+        if any(d.total_seconds() < 86400 for d in diffs.head(10)):
+            is_intraday = True
+
     data['MA20'] = data['close'].rolling(20).mean()
     data['MA50'] = data['close'].rolling(50).mean()
     data['MA200'] = data['close'].rolling(200).mean()
@@ -23,7 +33,9 @@ def get_tv_chart_payload(df: pd.DataFrame, show_bb: bool, show_m20: bool, show_m
     bbu_l, bbm_l, bbl_l = [], [], []
 
     for _, row in data.iterrows():
-        t = row['time_str']
+        dt = row['time_dt']
+        t = int(dt.timestamp()) if is_intraday else dt.strftime('%Y-%m-%d')
+            
         o, h, l, c = float(row['open']), float(row['high']), float(row['low']), float(row['close'])
         v = float(row.get('volume', 0))
         c_list.append({"time": t, "open": o, "high": h, "low": l, "close": c})
@@ -39,23 +51,40 @@ def get_tv_chart_payload(df: pd.DataFrame, show_bb: bool, show_m20: bool, show_m
     return {
         "cd": c_list, "vd": v_list, "m20": m20_l, "m50": m50_l, "m200": m200_l,
         "bbu": bbu_l, "bbm": bbm_l, "bbl": bbl_l,
-        "s_bb": show_bb, "s_20": show_m20, "s_50": show_m50, "s_200": show_m200
+        "s_bb": show_bb, "s_20": show_m20, "s_50": show_m50, "s_200": show_m200,
+        "is_intraday": is_intraday
     }
 
 
-from modules.tv_html import TV_HTML_TEMPLATE
-
-
-def render_tradingview_chart(df: pd.DataFrame, symbol: str, show_bb: bool = True, show_ma20: bool = True, show_ma50: bool = True, show_ma200: bool = True, height: int = 580):
+def render_tradingview_chart(
+    df: pd.DataFrame,
+    symbol: str,
+    show_bb: bool = True,
+    show_ma20: bool = True,
+    show_ma50: bool = True,
+    show_ma200: bool = True,
+    show_pivots: bool = False,
+    pivots_data: dict = None,
+    height: int = 580,
+    timeframe_label: str = "Daily"
+):
     if df is None or df.empty or len(df) < 5:
         return components.html("<p style='color:#888;'>Insufficient price data.</p>", height=60)
         
     p = get_tv_chart_payload(df, show_bb, show_ma20, show_ma50, show_ma200)
     
+    clean_pivots = {}
+    if show_pivots and pivots_data:
+        for k, v in pivots_data.items():
+            if v is not None and isinstance(v, (int, float)) and v > 0:
+                clean_pivots[k] = float(v)
+
     html = (
         TV_HTML_TEMPLATE
         .replace("__HEIGHT__", str(height))
         .replace("__SYMBOL__", str(symbol))
+        .replace("__TIMEFRAME_LABEL__", str(timeframe_label))
+        .replace("__IS_INTRADAY__", str(p["is_intraday"]).lower())
         .replace("__CANDLES_JSON__", json.dumps(p["cd"]))
         .replace("__VOLUME_JSON__", json.dumps(p["vd"]))
         .replace("__M20_JSON__", json.dumps(p["m20"]))
@@ -68,6 +97,9 @@ def render_tradingview_chart(df: pd.DataFrame, symbol: str, show_bb: bool = True
         .replace("__SHOW_M20__", str(p["s_20"]).lower())
         .replace("__SHOW_M50__", str(p["s_50"]).lower())
         .replace("__SHOW_M200__", str(p["s_200"]).lower())
+        .replace("__SHOW_PIVOTS__", str(show_pivots).lower())
+        .replace("__PIVOTS_JSON__", json.dumps(clean_pivots))
     )
     components.html(html, height=height + 15)
+
 

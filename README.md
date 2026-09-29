@@ -1,39 +1,50 @@
-# 🇻🇳 VNI Stock Evaluator (Định Giá & Phân Tích Kỹ Thuật Cổ Phiếu)
+# 🇻🇳 VNI Stock Evaluator & Live Market Board (Định Giá & Bảng Điện Tử Trực Tuyến)
 
-An interactive, all-in-one **Vietnamese Stock Evaluation & Technical Analysis Dashboard** built with **100% Python**, **Streamlit**, and **Plotly**, powered by **vnstock 4.0.8**.
+An interactive, all-in-one **Vietnamese Stock Evaluation, Real-Time Market Board, Order Flow & Technical Analysis Dashboard** built with **100% Python**, **Streamlit**, and **Plotly**, powered by **vnstock 4.0.8**.
 
 ---
 
 ## 🌟 Key Features
 
-### 1. 📈 Interactive Technical Analysis & Bollinger Bands
-- **Candlestick Price Action**: Real-time & multi-year daily OHLCV charts.
-- **Bollinger Bands (20, 2)**: Dynamic upper/lower volatility corridors with shaded channels.
-- **Moving Averages**: Short-term (MA20), Medium-term (MA50), and Long-term Trend (MA200).
-- **Volume Panel**: Color-coded volume bars with 20-day Average Volume overlay.
-- **Momentum Indicators**: Toggleable **RSI (14)** with overbought/oversold bands and **MACD (12, 26, 9)** histogram.
-- **Automated Trend Signals**: Real-time signal summary (MA crossovers & Bollinger Band squeeze/bounce alerts).
+### 1. 🖥️ VCBS-Style Electronic Live Price Board (Bảng Giá Trực Tuyến)
+- **Top 4 Real-time Indices (VN-INDEX, VN30, HNX-INDEX, UPCOM)**: Live points, point change (+/- and %), volume (Tr), and turnover value (K Tỷ).
+- **Exchange & Sector Switcher**: One-click filtering across **HOSE, VN30, Banks, Tech, Steel, Real Estate, Securities, Consumer, Energy...**
+- **Full 3-Level Depth Order Book**:
+  - `TC` (Tham chiếu - Vàng), `Trần` (Tím), `Sàn` (Xanh lơ)
+  - `Dư Mua`: G3, KL3, G2, KL2, G1, KL1
+  - `Khớp Lệnh`: Giá khớp, +/-, %, KL khớp
+  - `Dư Bán`: G1, KL1, G2, KL2, G3, KL3
+  - `Tổng KL`, `Cao`, `Thấp`, `TB`, `Khối Ngoại Mua / Bán`
+- **Smart Market Wrap (Bản Tin Tổng Hợp)**: Automated market commentary with breadth (Tăng/Trần, Giảm/Sàn, TC), top gainers, losers, and liquidity leaders.
 
-### 2. 💰 Multi-Model Intrinsic Valuation Suite
-- **5-Year Historical P/E & P/B Multiple Bands**: Computes mean, median, $\pm 1\sigma$, $\pm 2\sigma$ percentile corridors and fair value targets.
-- **Benjamin Graham Models**:
-  - Classic Graham Number: $\sqrt{22.5 \times \text{EPS} \times \text{BVPS}}$
-  - Vietnam Bond-Adjusted Graham Formula: $\text{EPS} \times (8.5 + 2g) \times \frac{4.4}{Y}$
-- **Discounted Cash Flow (DCF / FCFE)**:
-  - Interactive UI sliders for 5-Year Growth Rate, Terminal Growth Rate, and Discount Rate (WACC).
-  - 5-Year projected cash flow schedules.
-  - **2D Sensitivity Analysis Matrix** (Growth vs WACC).
-- **Executive Margin of Safety Scorecard**: Blended weighted fair value vs current market price with undervaluation/overvaluation badges.
+### 2. ⚡ Live Session Order Flow & VWAP (Khớp Lệnh Trong Phiên)
+- **Active Buy vs Sell Volume Breakdown**: Real-time ratio of market orders hitting Ask (*Active Buy*) vs Bid (*Active Sell*).
+- **Intraday VWAP (Volume-Weighted Average Price)**: Interactive intraday chart comparing execution price vs VWAP baseline.
+- **Liquidity Pressure Meter & Donut Distribution**: Identifies whether bulls or bears are accumulating positions.
 
-### 3. 🏥 Financial Quality & Health Scoring
-- **Piotroski F-Score (0–9)**: Complete 9-point criteria evaluating Profitability, Solvency/Leverage, and Operating Efficiency.
-- **Altman Z''-Score**: Bankruptcy and solvency risk index for Emerging Markets (Safe, Grey, Distress zones).
-- **DuPont 3-Step Analysis**: Deconstructs $\text{ROE} = \text{Net Profit Margin} \times \text{Asset Turnover} \times \text{Financial Leverage}$.
-- **Working Capital & Cash Cycle**: Tracks DSO, DIO, DPO, and Cash Conversion Cycle.
+### 3. 🎯 Quantitative Buy/Sell Decision Suite & Trade Setup
+- **TradingView-Style Speedometer Consensus**: 15-factor quantitative scoring (RSI, Stochastic, MACD, Bollinger Bands, EMA 9/21, MA20/50/200, CCI).
+- **Automated Trade Setup (Kế Hoạch Giao Dịch)**:
+  - Recommended Entry Zone corridor.
+  - Take Profit Target 1 (TP1) & Target 2 (TP2).
+  - ATR-based Dynamic Stop-Loss level.
+  - Calculated **Risk-Reward (R:R) Ratio** (e.g. 1 : 2.0).
+- **Pivot Points Matrix**: Daily Classic and Fibonacci Support & Resistance levels (S3, S2, S1, PP, R1, R2, R3).
 
-### 4. 🔍 Sector Peer Screener
-- One-click live scanning across industry groups (**VN30, Banks, Tech, Steel, Real Estate, Securities, Consumer, Energy, Logistics, Fertilizer**).
-- Side-by-side comparison of P/E, P/B, ROE, Dividend Yield, F-Score, and Solvency status.
+### 4. 📈 Interactive Technical Analysis & Bollinger Bands
+- **TradingView 60fps Lightweight Engine** + Multi-subplot Plotly Candlestick view.
+- Bollinger Bands (20, 2), Moving Averages (MA20/50/200), RSI (14), and MACD (12, 26, 9).
+
+### 5. 💰 Multi-Model Intrinsic Valuation Suite
+- 5-Year Historical P/E & P/B Multiple Corridor Bands.
+- Benjamin Graham Number & Bond-adjusted valuation.
+- DCF / FCFE with 2D Sensitivity Matrix.
+
+### 6. 🏥 Financial Quality & Health Scoring
+- Piotroski F-Score (0–9), Altman Z''-Score solvency risk, DuPont 3-Step ROE decomposition, and Cash Conversion Cycle.
+
+### 7. 🔍 Sector Peer Screener
+- Real-time peer scanner across 10 Vietnamese industry sectors.
 
 ---
 
