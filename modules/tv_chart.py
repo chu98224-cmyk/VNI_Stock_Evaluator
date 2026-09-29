@@ -11,8 +11,11 @@ from modules.tv_html import TV_HTML_TEMPLATE
 
 
 def get_tv_chart_payload(df: pd.DataFrame, show_bb: bool, show_m20: bool, show_m50: bool, show_m200: bool):
-    data = df.copy().sort_values('time').reset_index(drop=True)
+    data = df.copy()
     data['time_dt'] = pd.to_datetime(data['time'])
+    data = data.dropna(subset=['time_dt', 'open', 'high', 'low', 'close'])
+    data = data.drop_duplicates(subset=['time_dt'])
+    data = data.sort_values('time_dt').reset_index(drop=True)
     
     # Check if data is intraday
     is_intraday = False
@@ -40,13 +43,13 @@ def get_tv_chart_payload(df: pd.DataFrame, show_bb: bool, show_m20: bool, show_m
         v = float(row.get('volume', 0))
         c_list.append({"time": t, "open": o, "high": h, "low": l, "close": c})
         v_list.append({"time": t, "value": v, "color": "rgba(8,153,129,0.55)" if c >= o else "rgba(242,54,69,0.55)"})
-        if pd.notna(row['MA20']): m20_l.append({"time": t, "value": float(row['MA20'])})
-        if pd.notna(row['MA50']): m50_l.append({"time": t, "value": float(row['MA50'])})
-        if pd.notna(row['MA200']): m200_l.append({"time": t, "value": float(row['MA200'])})
+        if pd.notna(row['MA20']): m20_l.append({"time": t, "value": round(float(row['MA20']), 2)})
+        if pd.notna(row['MA50']): m50_l.append({"time": t, "value": round(float(row['MA50']), 2)})
+        if pd.notna(row['MA200']): m200_l.append({"time": t, "value": round(float(row['MA200']), 2)})
         if pd.notna(row['BB_Upper']):
-            bbu_l.append({"time": t, "value": float(row['BB_Upper'])})
-            bbm_l.append({"time": t, "value": float(row['BB_Mid'])})
-            bbl_l.append({"time": t, "value": float(row['BB_Lower'])})
+            bbu_l.append({"time": t, "value": round(float(row['BB_Upper']), 2)})
+            bbm_l.append({"time": t, "value": round(float(row['BB_Mid']), 2)})
+            bbl_l.append({"time": t, "value": round(float(row['BB_Lower']), 2)})
 
     return {
         "cd": c_list, "vd": v_list, "m20": m20_l, "m50": m50_l, "m200": m200_l,

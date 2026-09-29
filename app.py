@@ -9,6 +9,7 @@ from modules.data_fetcher import (
     get_all_stock_symbols,
     get_exchange_symbols,
     get_live_price_board,
+    get_symbol_live_depth_and_foreign,
     get_intraday_ticks,
     get_intraday_history,
     get_market_indices,
@@ -20,7 +21,6 @@ from modules.data_fetcher import (
     extract_latest_fundamental_metrics
 )
 from modules.live_analytics import (
-    analyze_order_flow,
     calculate_technical_signals,
     calculate_trade_setup,
     calculate_pivot_points,
@@ -28,7 +28,8 @@ from modules.live_analytics import (
 )
 from modules.market_board import (
     render_indices_banner,
-    render_price_board_table
+    render_price_board_table,
+    render_fireant_live_tab
 )
 from modules.valuation_engine import (
     calculate_pe_pb_bands,
@@ -49,7 +50,7 @@ from modules.charts import (
     create_dupont_chart,
     create_intraday_vwap_chart,
     create_technical_gauge_chart,
-    create_order_flow_donut_chart
+    create_foreign_flow_chart
 )
 from modules.tv_chart import render_tradingview_chart
 
@@ -246,69 +247,10 @@ else:
     ])
 
     # =========================================================
-    # TAB 1: LIVE INTRADAY & ORDER FLOW
+    # TAB 1: SỔ LỆNH & KHỐI NGOẠI (FIREANT LIVE ENGINE)
     # =========================================================
     with tab_live:
-        st.subheader(f"⚡ Diễn Biến Khớp Lệnh & Khối Ngoại Trong Phiên - {selected_symbol}")
-        of_res = analyze_order_flow(intraday_df, ref_price=current_price)
-        
-        c1, c2, c3, c4 = st.columns(4)
-        c1.metric("🟢 Mua Chủ Động", f"{of_res['buy_vol']:,.0f} CP" if of_res['has_data'] else "N/A", f"{of_res['buy_pct']}% tổng khớp")
-        c2.metric("🔴 Bán Chủ Động", f"{of_res['sell_vol']:,.0f} CP" if of_res['has_data'] else "N/A", f"{of_res['sell_pct']}% tổng khớp")
-        c3.metric("⚖️ Đường VWAP", f"{of_res['vwap_latest']:,.0f} VND" if of_res['has_data'] else "N/A", f"{of_res['vwap_diff_pct']:+.2f}% vs giá")
-        c4.markdown(f"**Áp lực Khớp lệnh:**<br><span class='status-badge {of_res.get('badge_type', 'badge-yellow')}'>{of_res['pressure']}</span>", unsafe_allow_html=True)
-        
-        st.markdown("---")
-        
-        # Intraday Timeframe Selection for 60fps TradingView Chart
-        itv_map = {"⚡ 1 Phút (1m)": "1m", "📊 5 Phút (5m)": "5m", "⏰ 15 Phút (15m)": "15m", "🕒 1 Giờ (1H)": "1H"}
-        itv_label = st.radio("Khung Thời Gian Trong Phiên (Intraday)", list(itv_map.keys()), horizontal=True, index=0)
-        itv_code = itv_map[itv_label]
-        
-        intraday_hist_df = get_intraday_history(selected_symbol, interval=itv_code, days=5)
-        
-        st.markdown(f"#### 📈 Biểu Đồ Kỹ Thuật Intraday (TradingView 60fps Drag/Zoom/Pan) - {selected_symbol} • {itv_label}")
-        if intraday_hist_df is not None and not intraday_hist_df.empty and len(intraday_hist_df) >= 5:
-            render_tradingview_chart(
-                df=intraday_hist_df,
-                symbol=selected_symbol,
-                show_bb=show_bb,
-                show_ma20=show_ma20,
-                show_ma50=show_ma50,
-                show_ma200=False,
-                show_pivots=show_pivots,
-                pivots_data=pivots_active,
-                height=520,
-                timeframe_label=itv_label
-            )
-        else:
-            render_tradingview_chart(
-                df=price_df,
-                symbol=selected_symbol,
-                show_bb=show_bb,
-                show_ma20=show_ma20,
-                show_ma50=show_ma50,
-                show_ma200=show_ma200,
-                show_pivots=show_pivots,
-                pivots_data=pivots_active,
-                height=520,
-                timeframe_label="Daily Fallback"
-            )
-
-        st.markdown("---")
-        chart_col1, chart_col2 = st.columns([1, 1])
-        with chart_col1:
-            if of_res['has_data']:
-                donut_fig = create_order_flow_donut_chart(of_res['buy_vol'], of_res['sell_vol'], of_res['neutral_vol'])
-                st.plotly_chart(donut_fig, use_container_width=True)
-            else:
-                st.info("Chưa có dữ liệu phân bổ lệnh.")
-        with chart_col2:
-            st.markdown("#### 💡 Ý nghĩa VWAP & Khớp Lệnh Trong Phiên:")
-            st.write("• **Giá > VWAP:** Phe Mua chiếm ưu thế, dòng tiền sẵn sàng đẩy giá lên cao hơn mức trung bình.")
-            st.write("• **Giá < VWAP:** Phe Bán áp đảo, cảnh giác áp lực hạ giá của bên bán.")
-            st.write("• **Tỷ lệ Mua chủ động > 60%:** Tín hiệu gom hàng rõ nét của dòng tiền lớn (Smart Money).")
-            st.write("• **Kéo/Thả & Phóng to:** Bạn có thể tự do dùng chuột kéo thả, phóng to thu nhỏ từng phút/giờ giao dịch mượt mà 60fps.")
+        render_fireant_live_tab(selected_symbol, current_price, intraday_df)
 
     # =========================================================
     # TAB 2: ACTIONABLE BUY/SELL SIGNALS & TRADE SETUP

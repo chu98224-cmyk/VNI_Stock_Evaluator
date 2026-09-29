@@ -8,89 +8,172 @@ import pandas as pd
 import numpy as np
 
 
-def analyze_order_flow(intraday_df: pd.DataFrame, ref_price: float = None):
+def analyze_order_flow(
+    intraday_df: pd.DataFrame,
+    ref_price: float = None,
+    total_day_volume: float = None,
+    total_day_value_bil: float = None,
+    intraday_hist_df: pd.DataFrame = None
+):
     """
     Analyze intraday tick data for Active Buy vs Active Sell volume, VWAP, and liquidity pressure.
+    Supports scaling up to full-day session volume and value using 1m session bars.
     """
-    if intraday_df is None or intraday_df.empty or len(intraday_df) < 2:
+    if (intraday_df is None or intraday_df.empty or len(intraday_df) < 2) and (intraday_hist_df is None or intraday_hist_df.empty):
+        tot_vol = total_day_volume if (total_day_volume and total_day_volume > 0) else 0
+        tot_val = total_day_value_bil if (total_day_value_bil and total_day_value_bil > 0) else 0
         return {
-            "has_data": False,
-            "buy_vol": 0,
-            "sell_vol": 0,
+            "has_data": tot_vol > 0,
+            "buy_vol": round(tot_vol * 0.5),
+            "sell_vol": round(tot_vol * 0.5),
             "neutral_vol": 0,
-            "total_vol": 0,
+            "total_vol": tot_vol,
+            "buy_val_bil": round(tot_val * 0.5, 2),
+            "sell_val_bil": round(tot_val * 0.5, 2),
+            "neutral_val_bil": 0.0,
+            "total_val_bil": tot_val,
             "buy_pct": 50.0,
             "sell_pct": 50.0,
+            "neutral_pct": 0.0,
             "pressure": "Cân bằng",
-            "vwap_latest": 0,
+            "badge_type": "yellow",
+            "latest_price": ref_price or 0,
+            "vwap_latest": ref_price or 0,
             "vwap_diff_pct": 0,
             "df_vwap": pd.DataFrame()
         }
 
-    df = intraday_df.copy()
-    if 'time' in df.columns:
+    # 1. Base tick calculation from intraday_df if available
+    df = intraday_df.copy() if (intraday_df is not None and not intraday_df.empty) else pd.DataFrame()
+    if not df.empty and 'time' in df.columns:
         df = df.sort_values('time').reset_index(drop=True)
 
-    match_col = 'match_type' if 'match_type' in df.columns else None
+    match_col = 'match_type' if (not df.empty and 'match_type' in df.columns) else None
     
-    buy_vol = 0
-    sell_vol = 0
-    neutral_vol = 0
+    tick_buy_vol = 0
+    tick_sell_vol = 0
+    tick_neutral_vol = 0
     
-    if match_col:
-        buy_mask = df[match_col].astype(str).str.upper().str.contains('BUY|B', regex=True)
-        sell_mask = df[match_col].astype(str).str.upper().str.contains('SELL|S', regex=True)
+    if not df.empty:
+        if match_col:
+            buy_mask = df[match_col].astype(str).str.upper().str.contains('BUY|B', regex=True)
+            sell_mask = df[match_col].astype(str).str.upper().str.contains('SELL|S', regex=True)
+            
+            tick_buy_vol = float(df.loc[buy_mask, 'volume'].sum())
+            tick_sell_vol = float(df.loc[sell_mask, 'volume'].sum())
+            tick_neutral_vol = float(df.loc[~buy_mask & ~sell_mask, 'volume'].sum())
+        else:
+            df['p_diff'] = df['price'].diff().fillna(0)
+            tick_buy_vol = float(df.loc[df['p_diff'] > 0, 'volume'].sum())
+            tick_sell_vol = float(df.loc[df['p_diff'] < 0, 'volume'].sum())
+            tick_neutral_vol = float(df.loc[df['p_diff'] == 0, 'volume'].sum())
+
+    # 2. Check full-day 1-minute bars for today's session
+    has_hist = False
+    hist_buy_vol, hist_sell_vol, hist_neu_vol, hist_tot_vol = 0.0, 0.0, 0.0, 0.0
+    if intraday_hist_df is not None and not intraday_hist_df.empty:
+        h_df = intraday_hist_df.copy()
+        if 'time' in h_df.columns:
+            h_df['time'] = pd.to_datetime(h_df['time'])
+            latest_date = h_df['time'].dt.date.max()
+            h_df = h_df[h_df['time'].dt.date == latest_date]
+            
+        if 'open' in h_df.columns and 'close' in h_df.columns and 'volume' in h_df.columns and not h_df.empty:
+            h_df['p_diff'] = h_df['close'] - h_df['open']
+            hist_buy_vol = float(h_df.loc[h_df['p_diff'] > 0, 'volume'].sum())
+            hist_sell_vol = float(h_df.loc[h_df['p_diff'] < 0, 'volume'].sum())
+            hist_neu_vol = float(h_df.loc[h_df['p_diff'] == 0, 'volume'].sum())
+            hist_tot_vol = hist_buy_vol + hist_sell_vol + hist_neu_vol
+            if hist_tot_vol > 0:
+                has_hist = True
+
+    # 3. Determine final volumes & percentages
+    if has_hist:
+        tot_ref = total_day_volume if (total_day_volume and total_day_volume > 0) else hist_tot_vol
+        buy_pct = (hist_buy_vol / hist_tot_vol) * 100.0
+        sell_pct = (hist_sell_vol / hist_tot_vol) * 100.0
+        neu_pct = (hist_neu_vol / hist_tot_vol) * 100.0
         
-        buy_vol = float(df.loc[buy_mask, 'volume'].sum())
-        sell_vol = float(df.loc[sell_mask, 'volume'].sum())
-        neutral_vol = float(df.loc[~buy_mask & ~sell_mask, 'volume'].sum())
+        final_tot_vol = float(tot_ref)
+        final_buy_vol = round(final_tot_vol * (buy_pct / 100.0))
+        final_sell_vol = round(final_tot_vol * (sell_pct / 100.0))
+        final_neu_vol = max(0, int(final_tot_vol - final_buy_vol - final_sell_vol))
     else:
-        df['p_diff'] = df['price'].diff().fillna(0)
-        buy_vol = float(df.loc[df['p_diff'] > 0, 'volume'].sum())
-        sell_vol = float(df.loc[df['p_diff'] < 0, 'volume'].sum())
-        neutral_vol = float(df.loc[df['p_diff'] == 0, 'volume'].sum())
+        tick_tot = tick_buy_vol + tick_sell_vol + tick_neutral_vol
+        if tick_tot > 0:
+            buy_pct = (tick_buy_vol / tick_tot) * 100.0
+            sell_pct = (tick_sell_vol / tick_tot) * 100.0
+            neu_pct = (tick_neutral_vol / tick_tot) * 100.0
+        else:
+            buy_pct, sell_pct, neu_pct = 50.0, 50.0, 0.0
 
-    total_matched = buy_vol + sell_vol
-    if total_matched > 0:
-        buy_pct = (buy_vol / total_matched) * 100
-        sell_pct = (sell_vol / total_matched) * 100
-    else:
-        buy_pct = 50.0
-        sell_pct = 50.0
+        if total_day_volume and total_day_volume > tick_tot:
+            final_tot_vol = float(total_day_volume)
+            final_buy_vol = round(final_tot_vol * (buy_pct / 100.0))
+            final_sell_vol = round(final_tot_vol * (sell_pct / 100.0))
+            final_neu_vol = max(0, int(final_tot_vol - final_buy_vol - final_sell_vol))
+        else:
+            final_tot_vol = tick_tot
+            final_buy_vol = tick_buy_vol
+            final_sell_vol = tick_sell_vol
+            final_neu_vol = tick_neutral_vol
 
-    if buy_pct >= 62.0:
+    # 4. Market Pressure Consensus
+    if buy_pct >= sell_pct + 15.0:
         pressure = "Bên Mua áp đảo (Bullish Aggressive)"
         badge_type = "green"
-    elif buy_pct >= 53.0:
+    elif buy_pct > sell_pct + 5.0:
         pressure = "Nghiêng về Mua (Moderate Buy)"
         badge_type = "green"
-    elif sell_pct >= 62.0:
+    elif sell_pct >= buy_pct + 15.0:
         pressure = "Bên Bán áp đảo (Bearish Aggressive)"
         badge_type = "red"
-    elif sell_pct >= 53.0:
+    elif sell_pct > buy_pct + 5.0:
         pressure = "Nghiêng về Bán (Moderate Sell)"
         badge_type = "red"
     else:
         pressure = "Thế trận Giằng co (Balanced)"
         badge_type = "yellow"
 
-    # Compute VWAP
-    df['cum_val'] = (df['price'] * df['volume']).cumsum()
-    df['cum_vol'] = df['volume'].cumsum()
-    df['vwap'] = df['cum_val'] / df['cum_vol'].replace(0, np.nan)
-    
-    latest_p = float(df['price'].iloc[-1])
-    latest_vwap = float(df['vwap'].dropna().iloc[-1]) if not df['vwap'].dropna().empty else latest_p
+    # 5. Compute VWAP
+    if not df.empty and 'volume' in df.columns and 'price' in df.columns:
+        df['cum_val'] = (df['price'] * df['volume']).cumsum()
+        df['cum_vol'] = df['volume'].cumsum()
+        df['vwap'] = df['cum_val'] / df['cum_vol'].replace(0, np.nan)
+        latest_p = float(df['price'].iloc[-1])
+        latest_vwap = float(df['vwap'].dropna().iloc[-1]) if not df['vwap'].dropna().empty else latest_p
+    else:
+        latest_p = ref_price or 0
+        latest_vwap = ref_price or 0
+
     vwap_diff = ((latest_p - latest_vwap) / latest_vwap * 100) if latest_vwap > 0 else 0
+
+    # 6. Values in Billion VND
+    price_factor = latest_vwap if latest_vwap > 1000 else (latest_vwap * 1000 if latest_vwap > 0 else (ref_price or 50000))
+    if total_day_value_bil and total_day_value_bil > 0:
+        final_tot_val = float(total_day_value_bil)
+        final_buy_val = round(final_tot_val * (buy_pct / 100.0), 2)
+        final_sell_val = round(final_tot_val * (sell_pct / 100.0), 2)
+        final_neu_val = round(max(0.0, final_tot_val - final_buy_val - final_sell_val), 2)
+    else:
+        final_tot_val = round((final_tot_vol * price_factor) / 1e9, 2)
+        final_buy_val = round((final_buy_vol * price_factor) / 1e9, 2)
+        final_sell_val = round((final_sell_vol * price_factor) / 1e9, 2)
+        final_neu_val = round((final_neu_vol * price_factor) / 1e9, 2)
 
     return {
         "has_data": True,
-        "buy_vol": buy_vol,
-        "sell_vol": sell_vol,
-        "neutral_vol": neutral_vol,
-        "total_vol": float(df['volume'].sum()),
+        "buy_vol": final_buy_vol,
+        "sell_vol": final_sell_vol,
+        "neutral_vol": final_neu_vol,
+        "total_vol": final_tot_vol,
+        "buy_val_bil": final_buy_val,
+        "sell_val_bil": final_sell_val,
+        "neutral_val_bil": final_neu_val,
+        "total_val_bil": final_tot_val,
         "buy_pct": round(buy_pct, 1),
         "sell_pct": round(sell_pct, 1),
+        "neutral_pct": round(neu_pct, 1),
         "pressure": pressure,
         "badge_type": badge_type,
         "latest_price": latest_p,

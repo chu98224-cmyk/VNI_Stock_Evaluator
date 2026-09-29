@@ -3,8 +3,11 @@ Market Board Module (VCBS-Style Live Price Board Component)
 Renders real-time exchange board with 3-level order depth, indices overview, and fast stock selector.
 """
 
+import datetime
 import streamlit as st
 import pandas as pd
+from modules.data_fetcher import get_symbol_live_depth_and_foreign
+from modules.charts import create_foreign_flow_chart
 
 
 def render_indices_banner(indices: list):
@@ -127,3 +130,195 @@ def render_price_board_table(board_df: pd.DataFrame, on_select_symbol_callback=N
         },
         height=540
     )
+
+
+
+def render_fireant_live_tab(selected_symbol: str, current_price: float, intraday_df: pd.DataFrame):
+    """
+    Renders FireAnt-style live stock modal:
+    Tab 1: 3-level Order Book Depth & Live Trade Log + Buy/Sell Volume Summary.
+    Tab 2: Foreign Trading breakdown (Volume, Value, Net) & Foreign Room stats.
+    """
+    st.subheader(f"⚡ Sổ Lệnh & Giao Dịch Khối Ngoại - {selected_symbol}")
+    
+    subtab_orderbook, subtab_foreign = st.tabs([
+        "📋 Sổ Lệnh & Nhật Ký Khớp Lệnh",
+        "🌍 Giao Dịch NĐTNN & Room Ngoại"
+    ])
+    
+    depth_info = get_symbol_live_depth_and_foreign(selected_symbol)
+    
+    with subtab_orderbook:
+        ctrl_col1, ctrl_col2 = st.columns([3, 1])
+        with ctrl_col1:
+            st.caption(f"🕒 Dữ liệu cập nhật lúc: **{datetime.datetime.now().strftime('%H:%M:%S')}** (Bộ nhớ đệm 15 giây)")
+        with ctrl_col2:
+            if st.button("🔄 Làm mới sổ lệnh", key="btn_refresh_orderbook", use_container_width=True):
+                st.rerun()
+
+        # 1. 3-Level Order Depth Table (FireAnt Style)
+        st.markdown("##### 📊 Sổ Lệnh Khớp Giá (3 Bước Giá Mua / Bán)")
+        if depth_info and depth_info.get("bids") and depth_info.get("asks"):
+            bids = depth_info["bids"]
+            asks = depth_info["asks"]
+            ref_p = depth_info.get("ref", 0)
+            
+            depth_rows = ""
+            for i in range(3):
+                b_p = bids[i]["price"]
+                b_v = bids[i]["vol"]
+                a_p = asks[i]["price"]
+                a_v = asks[i]["vol"]
+                
+                b_p_str = f"{b_p/1000:,.2f}" if b_p >= 1000 else f"{b_p:,.2f}"
+                a_p_str = f"{a_p/1000:,.2f}" if a_p >= 1000 else f"{a_p:,.2f}"
+                b_v_str = f"{int(b_v):,}" if b_v > 0 else "-"
+                a_v_str = f"{int(a_v):,}" if a_v > 0 else "-"
+                
+                b_col = "#00C087" if b_p > ref_p else ("#FF3B30" if b_p < ref_p else "#EAB308")
+                a_col = "#00C087" if a_p > ref_p else ("#FF3B30" if a_p < ref_p else "#EAB308")
+                
+                depth_rows += f'<tr style="border-bottom: 1px solid #21262D; height: 34px;"><td style="color: #E6EDF3; font-weight: 600; padding: 6px;">{b_v_str}</td><td style="color: {b_col}; font-weight: 700; padding: 6px; border-right: 1px solid #30363D; background: rgba(0,192,135,0.05);">{b_p_str}</td><td style="color: {a_col}; font-weight: 700; padding: 6px; background: rgba(255,59,48,0.05);">{a_p_str}</td><td style="color: #E6EDF3; font-weight: 600; padding: 6px;">{a_v_str}</td></tr>'
+            
+            depth_html = f'<div style="background: #161B22; border: 1px solid #30363D; border-radius: 8px; padding: 10px; margin-bottom: 16px;"><table style="width: 100%; border-collapse: collapse; text-align: center; font-family: -apple-system, BlinkMacSystemFont, Segoe UI, Roboto, monospace; font-size: 14px;"><thead><tr style="border-bottom: 1px solid #30363D; color: #8B949E; font-size: 13px;"><th colspan="2" style="padding: 6px; border-right: 1px solid #30363D; color: #00C087; font-weight: 700;">ĐẶT MUA</th><th colspan="2" style="padding: 6px; color: #FF3B30; font-weight: 700;">ĐẶT BÁN</th></tr><tr style="border-bottom: 1px solid #21262D; color: #8B949E; font-size: 12px;"><th style="padding: 6px; width: 25%;">KL Mua</th><th style="padding: 6px; width: 25%; border-right: 1px solid #30363D;">Giá Mua</th><th style="padding: 6px; width: 25%;">Giá Bán</th><th style="padding: 6px; width: 25%;">KL Bán</th></tr></thead><tbody>{depth_rows}</tbody></table></div>'
+            st.markdown(depth_html, unsafe_allow_html=True)
+        else:
+            st.info("Chưa có dữ liệu sổ lệnh 3 bước giá.")
+        # 2. Live Trade Log (Nhật ký khớp lệnh)
+        st.markdown("##### 📜 Nhật Ký Khớp Lệnh Trực Tuyến")
+        if intraday_df is not None and not intraday_df.empty:
+            df_trades = intraday_df.copy()
+            ref_val = depth_info.get("ref", current_price)
+            if 'time' in df_trades.columns:
+                df_trades['Khớp'] = pd.to_datetime(df_trades['time']).dt.strftime('%H:%M:%S')
+            else:
+                df_trades['Khớp'] = '-'
+            
+            p_sample = df_trades['price'].iloc[0] if not df_trades.empty else 0
+            if p_sample >= 1000:
+                df_trades['Giá_num'] = df_trades['price'] / 1000
+                ref_scaled = ref_val / 1000 if ref_val >= 1000 else ref_val
+            else:
+                df_trades['Giá_num'] = df_trades['price']
+                ref_scaled = ref_val / 1000 if ref_val >= 1000 else ref_val
+
+            df_trades['Giá'] = df_trades['Giá_num'].apply(lambda x: f"{x:,.2f}")
+            df_trades['diff'] = df_trades['Giá_num'] - ref_scaled
+            df_trades['+/-'] = df_trades['diff'].apply(lambda x: f"{x:+.2f}")
+            df_trades['KL'] = df_trades['volume'].apply(lambda x: f"{int(x):,}")
+            
+            match_col = 'match_type' if 'match_type' in df_trades.columns else None
+            if match_col:
+                df_trades['M/B'] = df_trades[match_col].apply(
+                    lambda x: '🟢 M' if 'buy' in str(x).lower() or 'b' == str(x).lower() else ('🔴 B' if 'sell' in str(x).lower() or 's' == str(x).lower() else '⚪ -')
+                )
+            else:
+                df_trades['M/B'] = '⚪ -'
+            
+            display_df = df_trades[['Khớp', 'Giá', '+/-', 'KL', 'M/B']].iloc[::-1].reset_index(drop=True)
+            st.dataframe(display_df, use_container_width=True, height=360, hide_index=True)
+            
+            # 3. FireAnt-style Official Summary (KL Mua / Bán Chủ Động & Tổng Khớp)
+            st.markdown("##### 📊 Thống Kê Khớp Lệnh Chủ Động & Toàn Phiên (Dữ Liệu Sàn)")
+            tot_vol = depth_info.get('total_volume', 0)
+            tot_val_bil = depth_info.get('total_value_bil', 0)
+            buy_v = depth_info.get('buy_vol', 0)
+            sell_v = depth_info.get('sell_vol', 0)
+            buy_p = depth_info.get('buy_pct', 0)
+            sell_p = depth_info.get('sell_pct', 0)
+            buy_val = depth_info.get('buy_val_bil', 0)
+            sell_val = depth_info.get('sell_val_bil', 0)
+
+            sum_c1, sum_c2, sum_c3 = st.columns(3)
+            sum_c1.metric(
+                "📦 Tổng KL Khớp",
+                f"{tot_vol:,.0f} CP",
+                f"GT: {tot_val_bil:,.2f} Tỷ VND" if tot_val_bil > 0 else None
+            )
+            sum_c2.metric(
+                "🟢 KL MUA Chủ Động",
+                f"{buy_v:,.0f} CP" if buy_v > 0 else "-",
+                f"{buy_p:.1f}% tổng khớp | {buy_val:,.2f} Tỷ" if buy_v > 0 else None
+            )
+            sum_c3.metric(
+                "🔴 KL BÁN Chủ Động",
+                f"{sell_v:,.0f} CP" if sell_v > 0 else "-",
+                f"{sell_p:.1f}% tổng khớp | {sell_val:,.2f} Tỷ" if sell_v > 0 else None
+            )
+
+            st.markdown("---")
+            # 4. Detailed Official Trading Metrics (Giá TB, Biên Độ, ATO/ATC)
+            avg_p = depth_info.get('avg_price', 0)
+            high_p = depth_info.get('highest', 0)
+            low_p = depth_info.get('lowest', 0)
+            ref_p = depth_info.get('ref', 0)
+            ato_v = depth_info.get('match_vol_ato', 0)
+            atc_v = depth_info.get('match_vol_atc', 0)
+
+            c1, c2, c3 = st.columns(3)
+            avg_display = f"{avg_p/1000:,.2f}" if avg_p >= 1000 else (f"{avg_p:,.2f}" if avg_p > 0 else "-")
+            ref_display = f"{ref_p/1000:,.2f}" if ref_p >= 1000 else (f"{ref_p:,.2f}" if ref_p > 0 else "-")
+            diff_avg = (avg_p - ref_p) / 1000 if (avg_p >= 1000 and ref_p >= 1000) else (avg_p - ref_p)
+            c1.metric(
+                "📊 Giá Khớp TB",
+                f"{avg_display}",
+                f"{diff_avg:+.2f} vs TC ({ref_display})" if ref_p > 0 and avg_p > 0 else None
+            )
+            high_display = f"{high_p/1000:,.2f}" if high_p >= 1000 else f"{high_p:,.2f}"
+            low_display = f"{low_p/1000:,.2f}" if low_p >= 1000 else f"{low_p:,.2f}"
+            spread = (high_p - low_p) / 1000 if high_p >= 1000 else (high_p - low_p)
+            c2.metric(
+                "🎯 Biên Độ (Thấp - Cao)",
+                f"{low_display} - {high_display}" if (high_p > 0 or low_p > 0) else "-",
+                f"Biên độ: {spread:,.2f}" if (high_p > 0 and low_p > 0) else None
+            )
+            atc_display = f"{atc_v:,.0f}" if atc_v > 0 else "-"
+            ato_display = f"{ato_v:,.0f}" if ato_v > 0 else "-"
+            c3.metric(
+                "⏱️ Khớp Lệnh ATO / ATC",
+                f"ATC: {atc_display} CP",
+                f"ATO: {ato_display} CP" if ato_v > 0 else None
+            )
+        else:
+            st.info("Chưa có dữ liệu nhật ký khớp lệnh phiên hôm nay.")
+
+    with subtab_foreign:
+        st.markdown("##### 🌍 Giao Dịch Nhà Đầu Tư Nước Ngoài (NĐTNN)")
+        
+        f_buy_v = depth_info.get("foreign_buy_vol", 0)
+        f_sell_v = depth_info.get("foreign_sell_vol", 0)
+        f_net_v = depth_info.get("foreign_net_vol", 0)
+        
+        f_buy_val = depth_info.get("foreign_buy_val_bil", 0)
+        f_sell_val = depth_info.get("foreign_sell_val_bil", 0)
+        f_net_val = depth_info.get("foreign_net_val_bil", 0)
+        
+        fv1, fv2, fv3 = st.columns(3)
+        fv1.metric("🟢 KL Mua Ngoại", f"{f_buy_v:,.0f} CP")
+        fv2.metric("🔴 KL Bán Ngoại", f"{f_sell_v:,.0f} CP")
+        fv3.metric("⚖️ KL Mua - Bán Ròng", f"{f_net_v:+,.0f} CP", f"{'Mua ròng' if f_net_v >= 0 else 'Bán ròng'}")
+        
+        gv1, gv2, gv3 = st.columns(3)
+        gv1.metric("🟢 GT Mua Ngoại", f"{f_buy_val:,.2f} Tỷ VND")
+        gv2.metric("🔴 GT Bán Ngoại", f"{f_sell_val:,.2f} Tỷ VND")
+        gv3.metric("⚖️ GT Mua - Bán Ròng", f"{f_net_val:+,.2f} Tỷ VND", f"{'Dương (Mua ròng)' if f_net_val >= 0 else 'Âm (Bán ròng)'}")
+        
+        st.markdown("---")
+        st.markdown("##### 🚪 Tình Trạng Room Khối Ngoại")
+        
+        cur_r = depth_info.get("current_room", 0)
+        tot_r = depth_info.get("total_room", 0)
+        own_r = depth_info.get("owned_room", 0)
+        own_pct = depth_info.get("ownership_pct", 0)
+        
+        r1, r2, r3 = st.columns(3)
+        r1.metric("🏛️ Tổng Room Cho Phép", f"{tot_r:,.0f} CP")
+        r2.metric("🔓 Room Khả Dụng (Còn lại)", f"{cur_r:,.0f} CP")
+        r3.metric("🔒 NĐTNN Đang Nắm Giữ", f"{own_r:,.0f} CP", f"{own_pct:.2f}% Tổng Room")
+        
+        st.progress(min(1.0, max(0.0, own_pct / 100.0)), text=f"Tỷ lệ sở hữu nước ngoài: {own_pct:.2f}%")
+        
+        st.markdown("---")
+        flow_chart = create_foreign_flow_chart(selected_symbol, current_net_val_bil=f_net_val)
+        st.plotly_chart(flow_chart, use_container_width=True)
+

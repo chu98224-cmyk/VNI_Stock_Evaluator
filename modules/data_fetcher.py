@@ -5,6 +5,7 @@ Integrates with vnstock (VCI, KBS data sources) with caching and error handling.
 
 import os
 import datetime
+import requests
 import pandas as pd
 import numpy as np
 import streamlit as st
@@ -206,6 +207,7 @@ def get_intraday_ticks(symbol: str):
 def get_intraday_history(symbol: str, interval: str = '1m', days: int = 5):
     """
     Fetch comprehensive minute-by-minute (1m, 5m, 15m, 1H) intraday OHLCV bars with VWAP.
+    Filters strictly to the requested number of recent trading sessions.
     """
     symbol = symbol.upper().strip()
     end_date = datetime.date.today().strftime('%Y-%m-%d')
@@ -229,6 +231,13 @@ def get_intraday_history(symbol: str, interval: str = '1m', days: int = 5):
                         if col in df.columns:
                             df[col] = df[col] * 1000
                 
+                # Filter strictly to the latest `days` trading dates
+                if not df.empty and 'time' in df.columns:
+                    unique_dates = sorted(df['time'].dt.date.unique())
+                    if len(unique_dates) > days:
+                        target_dates = set(unique_dates[-days:])
+                        df = df[df['time'].dt.date.isin(target_dates)].reset_index(drop=True)
+
                 # Compute cumulative VWAP
                 df['cum_val'] = (df['close'] * df['volume']).cumsum()
                 df['cum_vol'] = df['volume'].cumsum()
@@ -305,6 +314,165 @@ def get_market_indices():
 
 
 
+def get_live_active_order_flow(symbol: str):
+    """
+    Fetch live real-time Active Buy (Buyer Up) and Active Sell (Seller Down) 
+    official exchange volumes directly from SSI iBoard streaming API.
+    """
+    symbol = symbol.upper().strip()
+    url = f"https://iboard-query.ssi.com.vn/stock/{symbol}"
+    headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)'}
+    try:
+        r = requests.get(url, headers=headers, timeout=4)
+        if r.ok:
+            d = r.json().get('data', {})
+            tot = float(d.get('stockVol', 0) or 0)
+            bu = float(d.get('stockBUVol', 0) or 0)
+            sd = float(d.get('stockSDVol', 0) or 0)
+            val = float(d.get('nmTotalTradedValue', 0) or 0) / 1e9  # Tỷ VND
+            return {
+                'total_volume': tot,
+                'buy_vol': bu,
+                'sell_vol': sd,
+                'buy_pct': (bu / tot * 100) if tot > 0 else 0.0,
+                'sell_pct': (sd / tot * 100) if tot > 0 else 0.0,
+                'total_val_bil': val,
+                'buy_val_bil': (val * (bu / tot)) if tot > 0 else 0.0,
+                'sell_val_bil': (val * (sd / tot)) if tot > 0 else 0.0
+            }
+    except Exception as e:
+        print(f"Error fetching active order flow for {symbol}: {e}")
+    return None
+
+
+
+@st.cache_data(ttl=15, show_spinner=False)
+def get_symbol_live_depth_and_foreign(symbol: str):
+    """
+    Fetch comprehensive live price depth (3-level bid/ask), current matched trades,
+    and foreign trade/room metrics for a single stock symbol.
+    """
+    symbol = symbol.upper().strip()
+    try:
+        if Trading is not None:
+            t = Trading(source='vci')
+            pb = t.price_board([symbol])
+            if pb is not None and not pb.empty:
+                row = pb.iloc[0]
+                ref = float(row.get(('listing', 'ref_price'), 0) or 0)
+                ceil = float(row.get(('listing', 'ceiling'), 0) or 0)
+                flr = float(row.get(('listing', 'floor'), 0) or 0)
+                match_p = float(row.get(('match', 'match_price'), 0) or 0)
+                match_v = float(row.get(('match', 'match_vol'), 0) or 0)
+                tot_vol = float(row.get(('match', 'accumulated_volume'), 0) or 0)
+                tot_val = float(row.get(('match', 'accumulated_value'), 0) or 0) * 1e6 # accumulated_value is in triệu VND
+                
+                f_buy_v = float(row.get(('match', 'foreign_buy_volume'), 0) or 0)
+                f_sell_v = float(row.get(('match', 'foreign_sell_volume'), 0) or 0)
+                f_buy_val = float(row.get(('match', 'foreign_buy_value'), 0) or 0)
+                f_sell_val = float(row.get(('match', 'foreign_sell_value'), 0) or 0)
+                
+                cur_room = float(row.get(('match', 'current_room'), 0) or 0)
+                tot_room = float(row.get(('match', 'total_room'), 0) or 0)
+                
+                b1_p = float(row.get(('bid_ask', 'bid_1_price'), 0) or 0)
+                b1_v = float(row.get(('bid_ask', 'bid_1_volume'), 0) or 0)
+                b2_p = float(row.get(('bid_ask', 'bid_2_price'), 0) or 0)
+                b2_v = float(row.get(('bid_ask', 'bid_2_volume'), 0) or 0)
+                b3_p = float(row.get(('bid_ask', 'bid_3_price'), 0) or 0)
+                b3_v = float(row.get(('bid_ask', 'bid_3_volume'), 0) or 0)
+                
+                a1_p = float(row.get(('bid_ask', 'ask_1_price'), 0) or 0)
+                a1_v = float(row.get(('bid_ask', 'ask_1_volume'), 0) or 0)
+                a2_p = float(row.get(('bid_ask', 'ask_2_price'), 0) or 0)
+                a2_v = float(row.get(('bid_ask', 'ask_2_volume'), 0) or 0)
+                a3_p = float(row.get(('bid_ask', 'ask_3_price'), 0) or 0)
+                a3_v = float(row.get(('bid_ask', 'ask_3_volume'), 0) or 0)
+                
+                change = (match_p - ref) if (ref > 0 and match_p > 0) else 0.0
+                change_pct = ((match_p - ref) / ref * 100) if (ref > 0 and match_p > 0) else 0.0
+                
+                owned_room = max(0.0, tot_room - cur_room)
+                ownership_pct = (owned_room / tot_room * 100) if tot_room > 0 else 0.0
+                
+                ato_p = float(row.get(('match', 'match_price_ato'), 0) or 0)
+                ato_v = float(row.get(('match', 'match_volume_ato'), 0) or 0)
+                atc_p = float(row.get(('match', 'match_price_atc'), 0) or 0)
+                atc_v = float(row.get(('match', 'match_volume_atc'), 0) or 0)
+
+                # Fetch official active buy/sell flow from SSI iBoard
+                flow = get_live_active_order_flow(symbol)
+                if flow and flow.get('total_volume', 0) > 0:
+                    buy_v = flow['buy_vol']
+                    sell_v = flow['sell_vol']
+                    buy_p = flow['buy_pct']
+                    sell_p = flow['sell_pct']
+                    buy_val_bil = flow['buy_val_bil']
+                    sell_val_bil = flow['sell_val_bil']
+                    if flow['total_volume'] > tot_vol:
+                        tot_vol = flow['total_volume']
+                    if flow['total_val_bil'] > 0:
+                        tot_val_bil = flow['total_val_bil']
+                    else:
+                        tot_val_bil = tot_val / 1e9
+                else:
+                    buy_v, sell_v, buy_p, sell_p = 0.0, 0.0, 0.0, 0.0
+                    tot_val_bil = tot_val / 1e9
+                    buy_val_bil = 0.0
+                    sell_val_bil = 0.0
+                
+                return {
+                    "symbol": symbol,
+                    "ref": ref,
+                    "ceiling": ceil,
+                    "floor": flr,
+                    "match_price": match_p,
+                    "match_vol": match_v,
+                    "change": change,
+                    "change_pct": change_pct,
+                    "total_volume": tot_vol,
+                    "total_value_bil": tot_val_bil,
+                    "highest": float(row.get(('match', 'highest'), 0) or 0),
+                    "lowest": float(row.get(('match', 'lowest'), 0) or 0),
+                    "avg_price": float(row.get(('match', 'avg_match_price'), 0) or 0),
+                    "match_price_ato": ato_p,
+                    "match_vol_ato": ato_v,
+                    "match_price_atc": atc_p,
+                    "match_vol_atc": atc_v,
+                    "buy_vol": buy_v,
+                    "sell_vol": sell_v,
+                    "buy_pct": buy_p,
+                    "sell_pct": sell_p,
+                    "buy_val_bil": buy_val_bil,
+                    "sell_val_bil": sell_val_bil,
+                    "bids": [
+                        {"level": 1, "price": b1_p, "vol": b1_v},
+                        {"level": 2, "price": b2_p, "vol": b2_v},
+                        {"level": 3, "price": b3_p, "vol": b3_v},
+                    ],
+                    "asks": [
+                        {"level": 1, "price": a1_p, "vol": a1_v},
+                        {"level": 2, "price": a2_p, "vol": a2_v},
+                        {"level": 3, "price": a3_p, "vol": a3_v},
+                    ],
+                    "foreign_buy_vol": f_buy_v,
+                    "foreign_sell_vol": f_sell_v,
+                    "foreign_net_vol": f_buy_v - f_sell_v,
+                    "foreign_buy_val_bil": f_buy_val / 1e9,
+                    "foreign_sell_val_bil": f_sell_val / 1e9,
+                    "foreign_net_val_bil": (f_buy_val - f_sell_val) / 1e9,
+                    "current_room": cur_room,
+                    "total_room": tot_room,
+                    "owned_room": owned_room,
+                    "ownership_pct": ownership_pct
+                }
+    except Exception as e:
+        print(f"Error fetching depth and foreign info for {symbol}: {e}")
+        
+    return {}
+
+
+@st.cache_data(ttl=300, show_spinner=False)
 def get_stock_price_history(symbol: str, start_date: str = None, end_date: str = None, days: int = 365 * 3):
     """Fetch daily OHLCV price history for a given ticker."""
     symbol = symbol.upper().strip()

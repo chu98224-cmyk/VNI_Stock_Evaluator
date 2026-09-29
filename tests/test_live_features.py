@@ -18,7 +18,8 @@ from modules.charts import (
     create_technical_chart,
     create_intraday_vwap_chart,
     create_technical_gauge_chart,
-    create_order_flow_donut_chart
+    create_order_flow_donut_chart,
+    create_foreign_flow_chart
 )
 
 
@@ -94,6 +95,11 @@ class TestLiveFeatures(unittest.TestCase):
             pivots_data=pivots['classic']
         )
         self.assertIsNotNone(tech_fig)
+        
+        # Test foreign flow chart
+        flow_fig = create_foreign_flow_chart("HPG", -25.5)
+        self.assertIsNotNone(flow_fig)
+
 
 
 if __name__ == '__main__':
