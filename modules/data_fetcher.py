@@ -680,9 +680,14 @@ def get_company_profile(symbol: str):
     symbol = symbol.upper().strip()
     try:
         c = Company(source='VCI', symbol=symbol)
-        df = c.profile()
-        if df is not None and not df.empty:
-            return df.iloc[0].to_dict()
-    except Exception as e:
-        print(f"Error fetching profile for {symbol}: {e}")
+        if hasattr(c, 'profile') and callable(getattr(c, 'profile')):
+            df = c.profile()
+            if df is not None and not df.empty:
+                return df.iloc[0].to_dict()
+        elif hasattr(c, 'overview') and callable(getattr(c, 'overview')):
+            df = c.overview()
+            if df is not None and not df.empty:
+                return df.iloc[0].to_dict()
+    except Exception:
+        pass
     return {}

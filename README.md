@@ -1,10 +1,21 @@
 # 🇻🇳 VNI Stock Evaluator & Live Market Board (Định Giá & Bảng Điện Tử Trực Tuyến)
 
-An interactive, all-in-one **Vietnamese Stock Evaluation, Real-Time Market Board, Order Flow & Technical Analysis Dashboard** built with **100% Python**, **Streamlit**, and **Plotly**, powered by **vnstock 4.0.8**.
+An interactive, all-in-one **Vietnamese Stock Evaluation, Real-Time Market Board, AI Advisory Box Chat, Order Flow & Technical Analysis Dashboard** built with **100% Python**, **Streamlit**, and **Plotly**, powered by **vnstock 4.0.8**.
 
 ---
 
 ## 🌟 Key Features
+
+### 0. 🤖 AI Stock Evaluator & Conversational Box Chat (Trợ Lý Định Giá AI)
+- **Natural Language Symbol & Price Recognition**: Ask questions in natural Vietnamese (e.g. *"HPG giá 28k có nên mua không?"*, *"Định giá SSI"*, *"FPT hiện tại có đắt không?"*).
+- **Automated Real-Time Dossier Aggregator**: Assembles valuation fair values (DCF, Graham, P/E Bands), Piotroski F-Score (0-9), Altman Z''-Score solvency, technical momentum, and ATR trade plans on the fly.
+- **Actionable Buy / Hold / Sell Composite Rating**: Recommends Mua Tích Lũy / Nắm Giữ / Bán Hạ Tỷ Trọng with precise Entry ranges, TP1/TP2 targets, Stop-Loss, and capital allocation (% NAV).
+- **Multi-LLM & Hybrid Offline Support**:
+  - ⚡ **Built-in Quantitative Engine**: Zero-cost, 100% offline rule-based financial advisory.
+  - 🌟 **Google Gemini**: Gemini 1.5 Flash / Pro (Free tier supported).
+  - 🧠 **OpenAI**: GPT-4o / GPT-4o-mini.
+  - 🚀 **DeepSeek**: DeepSeek Chat / Reasoner (V3 & R1).
+  - 🦙 **Ollama**: Local LLMs (Llama 3, Qwen).
 
 ### 1. 🖥️ VCBS-Style Electronic Live Price Board (Bảng Giá Trực Tuyến)
 - **Top 4 Real-time Indices (VN-INDEX, VN30, HNX-INDEX, UPCOM)**: Live points, point change (+/- and %), volume (Tr), and turnover value (K Tỷ).
@@ -90,14 +101,20 @@ VNI_Stock_Evaluator/
 │
 ├── modules/
 │   ├── __init__.py
+│   ├── ai_evaluator.py        # AI Chatbot, prompt parser & multi-LLM engine
 │   ├── data_fetcher.py        # vnstock connector with caching (@st.cache_data)
 │   ├── valuation_engine.py    # DCF, Graham, Multiple Bands, DDM, Sensitivity Matrix
 │   ├── scoring_engine.py      # Piotroski F-Score (0-9), Altman Z-Score, DuPont breakdown
+│   ├── live_analytics.py      # Order flow analytics, VWAP, technical consensus & trade setup
+│   ├── market_board.py        # VCBS-style live price board & fireant depth widgets
+│   ├── tv_chart.py            # TradingView interactive lightweight charting
 │   └── charts.py              # Interactive Plotly candlestick & financial charts
 │
 └── tests/
+    ├── test_ai_evaluator.py   # Unit tests for prompt extraction & AI evaluation
     ├── test_valuation.py      # Unit tests for valuation algorithms
     ├── test_scoring.py        # Unit tests for financial health scoring
+    ├── test_live_features.py  # Unit tests for live order flow & trade setup
     └── test_charts.py         # Unit tests for technical chart generation
 ```
 
@@ -105,7 +122,7 @@ VNI_Stock_Evaluator/
 
 ## 🧪 Running Unit Tests
 
-Run the test suite to verify all valuation and scoring modules:
+Run the test suite to verify all valuation, scoring, and AI modules:
 ```bash
 py -3.10 -m unittest discover -s tests -p "test_*.py"
 ```

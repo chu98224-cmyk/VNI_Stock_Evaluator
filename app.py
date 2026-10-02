@@ -1,4 +1,5 @@
 
+import os
 import datetime
 import streamlit as st
 import pandas as pd
@@ -53,6 +54,14 @@ from modules.charts import (
     create_foreign_flow_chart
 )
 from modules.tv_chart import render_tradingview_chart
+from modules.ai_evaluator import (
+    extract_stock_symbol_from_prompt,
+    extract_target_price_from_prompt,
+    build_stock_dossier,
+    evaluate_stock_ai,
+    evaluate_stock_quantitative,
+    render_ai_chat_interface
+)
 
 
 st.set_page_config(
@@ -87,9 +96,48 @@ if "selected_ticker" not in st.session_state:
 
 app_view = st.sidebar.radio(
     "📍 Chế Độ Xem",
-    ["📊 Bảng Giá Trực Tuyến (Live VCBS)", "🔬 Phân Tích Cổ Phiếu Chi Tiết"],
+    [
+        "📊 Bảng Giá Trực Tuyến (Live VCBS)",
+        "🔬 Phân Tích Cổ Phiếu Chi Tiết",
+        "🤖 Trợ Lý AI Định Giá & Tư Vấn (Chatbot)"
+    ],
     index=0
 )
+
+# AI Engine Settings
+with st.sidebar.expander("🤖 Cài Đặt Động Cơ AI (LLM)", expanded=False):
+    ai_provider = st.selectbox(
+        "Động cơ Phân tích AI",
+        ["builtin", "gemini", "openai", "deepseek", "ollama"],
+        format_func=lambda x: {
+            "builtin": "⚡ Built-in Quant Engine (Offline, 100% Free)",
+            "gemini": "🌟 Google Gemini (Gemini 1.5)",
+            "openai": "🧠 OpenAI (GPT-4o / GPT-4o-mini)",
+            "deepseek": "🚀 DeepSeek (DeepSeek V3 / R1)",
+            "ollama": "🦙 Ollama Local LLM"
+        }.get(x, x),
+        index=0
+    )
+    
+    ai_api_key = ""
+    ai_model_name = ""
+    ai_endpoint = ""
+    
+    if ai_provider == "gemini":
+        default_gemini = os.environ.get("GEMINI_API_KEY", "")
+        ai_api_key = st.text_input("Gemini API Key", value=default_gemini, type="password", help="Lấy API Key miễn phí tại https://aistudio.google.com")
+        ai_model_name = st.selectbox("Model Gemini", ["gemini-1.5-flash", "gemini-1.5-pro"], index=0)
+    elif ai_provider == "openai":
+        default_openai = os.environ.get("OPENAI_API_KEY", "")
+        ai_api_key = st.text_input("OpenAI API Key", value=default_openai, type="password", help="OpenAI API Key (sk-...)")
+        ai_model_name = st.selectbox("Model OpenAI", ["gpt-4o-mini", "gpt-4o"], index=0)
+    elif ai_provider == "deepseek":
+        default_deepseek = os.environ.get("DEEPSEEK_API_KEY", "")
+        ai_api_key = st.text_input("DeepSeek API Key", value=default_deepseek, type="password", help="DeepSeek API Key (sk-...)")
+        ai_model_name = st.selectbox("Model DeepSeek", ["deepseek-chat", "deepseek-reasoner"], index=0)
+    elif ai_provider == "ollama":
+        ai_endpoint = st.text_input("Ollama Endpoint", value="http://localhost:11434")
+        ai_model_name = st.text_input("Tên Model Ollama", value="llama3")
 
 market_indices = get_market_indices()
 
@@ -158,7 +206,36 @@ if app_view == "📊 Bảng Giá Trực Tuyến (Live VCBS)":
 
 
 # ==============================================================================
-# VIEW 2: PHÂN TÍCH CỔ PHIẾU CHI TIẾT (DEEP DIVE EVALUATOR)
+# VIEW 2: TRỢ LÝ AI ĐỊNH GIÁ & TƯ VẤN (FULL-SCREEN CHATBOT)
+# ==============================================================================
+elif app_view == "🤖 Trợ Lý AI Định Giá & Tư Vấn (Chatbot)":
+    render_indices_banner(market_indices)
+    
+    st.sidebar.markdown("---")
+    st.sidebar.subheader("🎯 Cổ Phiếu Mặc Định")
+    ai_quick_ticker = st.sidebar.text_input("Mã cổ phiếu soi nhanh (e.g. HPG, VNM, SSI):", value=st.session_state["selected_ticker"]).strip().upper()
+    if ai_quick_ticker:
+        st.session_state["selected_ticker"] = ai_quick_ticker
+        
+    ai_selected_sym = st.session_state["selected_ticker"]
+    overview = get_company_overview(ai_selected_sym)
+    
+    st.markdown("## 🤖 Trợ Lý AI Định Giá & Tư Vấn Đầu Tư Toàn Diện")
+    st.markdown("Hệ thống tự động tích hợp **Định giá Doanh nghiệp (DCF, Graham, P/E Band)** + **Sức khỏe Tài chính (Piotroski, Altman Z)** + **Kỹ thuật & Dòng tiền** để đưa ra khuyến nghị Mua/Bán & Kế hoạch giải ngân.")
+    
+    render_ai_chat_interface(
+        selected_symbol=ai_selected_sym,
+        current_price=0.0,
+        ai_provider=ai_provider,
+        ai_api_key=ai_api_key,
+        ai_model_name=ai_model_name,
+        ai_endpoint=ai_endpoint,
+        key_suffix="fullscreen"
+    )
+
+
+# ==============================================================================
+# VIEW 3: PHÂN TÍCH CỔ PHIẾU CHI TIẾT (DEEP DIVE EVALUATOR)
 # ==============================================================================
 else:
     # Sidebar Controls for Stock Analysis
@@ -237,7 +314,8 @@ else:
             value=f"{current_price:,.0f} VND" if current_price > 0 else "N/A"
         )
     
-    tab_live, tab_signals, tab_tech, tab_val, tab_health, tab_screener = st.tabs([
+    tab_ai, tab_live, tab_signals, tab_tech, tab_val, tab_health, tab_screener = st.tabs([
+        "🤖 AI Định Giá & Chat",
         "⚡ Khớp Lệnh & Khối Ngoại (Live)",
         "🎯 Tín Hiệu Mua/Bán & Kế Hoạch GD",
         "📈 Biểu Đồ Kỹ Thuật",
@@ -245,6 +323,20 @@ else:
         "🏥 Sức Khỏe Tài Chính",
         "🔍 Lọc Cổ Phiếu Ngành"
     ])
+
+    # =========================================================
+    # TAB 0: TRỢ LÝ AI ĐỊNH GIÁ & TƯ VẤN (CHAT INTERFACE)
+    # =========================================================
+    with tab_ai:
+        render_ai_chat_interface(
+            selected_symbol=selected_symbol,
+            current_price=current_price,
+            ai_provider=ai_provider,
+            ai_api_key=ai_api_key,
+            ai_model_name=ai_model_name,
+            ai_endpoint=ai_endpoint,
+            key_suffix="tab"
+        )
 
     # =========================================================
     # TAB 1: SỔ LỆNH & KHỐI NGOẠI (FIREANT LIVE ENGINE)
